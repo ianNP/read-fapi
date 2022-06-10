@@ -5,24 +5,38 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 )
 
+type Customer struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Address  string `json:"address"`
+	City     string `json:"city"`
+	Postcode string `json:"postcode"`
+	Phone    string `json:"phone"`
+	Meter    int    `json:"meter"`
+}
+
+func (c Customer) String() string {
+	cust := fmt.Sprintf("Index: %v\n", c.Index)
+	cust += fmt.Sprintf("\tId: %v\n", c.ID)
+	cust += fmt.Sprintf("\tName: %v\n", c.Name)
+	contact := fmt.Sprintf("\tContact: %v, %v, %v, %v", c.Address, c.City, c.Postcode, c.Phone)
+	contact = strings.ReplaceAll(contact, "\n", ", ")
+	cust += contact + "\n"
+	cust += fmt.Sprintf("\tMeter reading: %v\n", c.Meter)
+	return cust
+}
+
 type Response struct {
-	Data []struct {
-		Index    int    `json:"index"`
-		ID       string `json:"id"`
-		Name     string `json:"name"`
-		Address  string `json:"address"`
-		City     string `json:"city"`
-		Postcode string `json:"postcode"`
-		Phone    string `json:"phone"`
-		Meter    int    `json:"meter"`
-	} `json:"data"`
-	Total      int `json:"total"`
-	Count      int `json:"count"`
+	Data       []Customer `json:"data"`
+	Total      int        `json:"total"`
+	Count      int        `json:"count"`
 	Pagination struct {
-		Next     interface{} `json:"next"`
-		Previous interface{} `json:"previous"` // Is this acceptable? the 'Next' field should match
+		Next     interface{} `json:"next"`     // This may return a nil
+		Previous interface{} `json:"previous"` // This may return a nil
 	} `json:"pagination"`
 }
 
@@ -66,6 +80,8 @@ func main() {
 			url = baseUrl + pagination.Next.(string)
 		}
 
-		fmt.Printf("API Response as struct %+v\n", data)
+		for _, c := range data {
+			fmt.Print(c)
+		}
 	}
 }
