@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strings"
+
+	"cloud.google.com/go/bigquery"
 )
 
 type Customer struct {
@@ -49,6 +53,20 @@ func main() {
 	url := baseUrl + "/customers"
 	onLastPage := false
 
+	ctx := context.Background()
+	bqClient, err := bigquery.NewClient(ctx, "ian-meikle-playground")
+	if err != nil {
+		log.Fatal(err)
+	}
+	table := bqClient.Dataset("test_bq_api").Table("customer_insert_test_table")
+	schema, err := bigquery.InferSchema(Customer{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := table.Create(ctx, &bigquery.TableMetadata{Schema: schema}); err != nil {
+		fmt.Printf("Table creation: %v\n", err)
+	}
+
 	for {
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -80,8 +98,11 @@ func main() {
 			url = baseUrl + pagination.Next.(string)
 		}
 
-		for _, c := range data {
-			fmt.Print(c)
-		}
+		err = table.Inserter().Put(ctx, data)
+		fmt.Println(err) // Should handle this better
+
+		// for _, c := range data {
+		// 	fmt.Print(c)
+		// }
 	}
 }
