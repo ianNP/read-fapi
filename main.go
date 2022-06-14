@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/bigquery"
 )
@@ -67,6 +68,8 @@ func main() {
 		fmt.Printf("Table creation: %v\n", err)
 	}
 
+	start := time.Now()
+
 	for {
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -99,10 +102,15 @@ func main() {
 		}
 
 		err = table.Inserter().Put(ctx, data)
-		fmt.Println(err) // Should handle this better
+		if err != nil {
+			fmt.Println(err) // Should handle this better
+		}
 
 		// for _, c := range data {
 		// 	fmt.Print(c)
 		// }
 	}
+
+	elapsed := time.Since(start)
+	log.Printf("Program took %s", elapsed)
 }
