@@ -89,6 +89,8 @@ func main() {
 		var responseObject Response
 		json.Unmarshal(bodyBytes, &responseObject)
 		data := responseObject.Data
+		first := data[0].Index
+		last := data[len(data)-1].Index
 
 		if onLastPage {
 			break
@@ -101,6 +103,7 @@ func main() {
 			url = baseUrl + pagination.Next.(string)
 		}
 
+		fmt.Printf("Handling items from index %d to %d\n", first, last)
 		err = table.Inserter().Put(ctx, data)
 		if err != nil {
 			fmt.Println(err) // Should handle this better
