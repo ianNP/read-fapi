@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -48,72 +49,88 @@ type Response struct {
 // Need to modularise this and remove all the code from main()
 
 func main() {
-	fmt.Println("Calling API...")
+	file, err := os.OpenFile("info.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer file.Close()
+
+	log.SetOutput(file)
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
+
+	fmt.Print("Calling API...")
 	client := &http.Client{}
 	baseUrl := "http://127.0.0.1:8000"
 	url := baseUrl + "/customers"
-	onLastPage := false
 
 	ctx := context.Background()
 	bqClient, err := bigquery.NewClient(ctx, "ian-meikle-playground")
 	if err != nil {
 		log.Fatal(err)
 	}
-	table := bqClient.Dataset("test_bq_api").Table("customer_insert_test_table")
+	table := bqClient.Dataset("test_bq_api").Table("customer_insert_test_table_buffered")
 	schema, err := bigquery.InferSchema(Customer{})
 	if err != nil {
 		log.Fatal(err)
 	}
 	if err := table.Create(ctx, &bigquery.TableMetadata{Schema: schema}); err != nil {
-		fmt.Printf("Table creation: %v\n", err)
+		// log.Fatalf("Table creation: %v\n", err)
+		log.Printf("Table creation: %v\n", err)
 	}
 
 	start := time.Now()
+	pageMax := 100
 
-	for {
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			fmt.Print(err.Error())
-		}
-		req.Header.Add("Accept", "application/json")
-		req.Header.Add("Content-Type", "application/json")
-		resp, err := client.Do(req)
-		if err != nil {
-			fmt.Print(err.Error())
-		}
-		defer resp.Body.Close()
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Print(err.Error())
-		}
-		var responseObject Response
-		json.Unmarshal(bodyBytes, &responseObject)
-		data := responseObject.Data
-		first := data[0].Index
-		last := data[len(data)-1].Index
+	ch := make(chan struct{})
+	var tokens = make(chan struct{}, 10)
+	for index := 1; index <= pageMax; index++ {
+		tempUrl := fmt.Sprintf("%v?page_num=%d&page_size=100", url, index)
+		tokens <- struct{}{}
+		go func(tempUrl string, client *http.Client, table *bigquery.Table, ctx context.Context) {
+			data := readAPI(tempUrl, client)
+			writeRows(data, table, ctx)
+			ch <- struct{}{}
+		}(tempUrl, client, table, ctx)
+		<-tokens
 
-		if onLastPage {
-			break
-		}
-		pagination := responseObject.Pagination
-		if pagination.Next == nil {
-			// Need to GET one more time before exiting the loop
-			onLastPage = true
-		} else {
-			url = baseUrl + pagination.Next.(string)
-		}
-
-		fmt.Printf("Handling items from index %d to %d\n", first, last)
-		err = table.Inserter().Put(ctx, data)
-		if err != nil {
-			fmt.Println(err) // Should handle this better
-		}
-
-		// for _, c := range data {
-		// 	fmt.Print(c)
-		// }
+	}
+	for index := 1; index <= pageMax; index++ {
+		<-ch
 	}
 
 	elapsed := time.Since(start)
-	log.Printf("Program took %s", elapsed)
+	fmt.Printf("Program took %s", elapsed)
+}
+
+func readAPI(tUrl string, client *http.Client) []Customer {
+	req, err := http.NewRequest("GET", tUrl, nil)
+	if err != nil {
+		log.Print(err.Error())
+	}
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Print(err.Error())
+	}
+	defer resp.Body.Close()
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Print(err.Error())
+	}
+	var responseObject Response
+	json.Unmarshal(bodyBytes, &responseObject)
+	return responseObject.Data
+}
+
+func writeRows(data []Customer, table *bigquery.Table, ctx context.Context) {
+	err := table.Inserter().Put(ctx, data)
+	if err != nil {
+		// log.Fatal(err)
+		log.Print(err) // Should handle this better
+	}
+	first := data[0].Index
+	last := data[len(data)-1].Index
+	log.Printf("Handling items from index %d to %d\n", first, last)
 }
