@@ -25,6 +25,7 @@ type Customer struct {
 	Meter    int    `json:"meter"`
 }
 
+// Customer implements fmt.Stringer
 func (c Customer) String() string {
 	cust := fmt.Sprintf("Index: %v\n", c.Index)
 	cust += fmt.Sprintf("\tId: %v\n", c.ID)
@@ -49,6 +50,7 @@ type Response struct {
 // Need to modularise this and remove all the code from main()
 
 func main() {
+	// Create a log file
 	file, err := os.OpenFile("info.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
@@ -59,10 +61,7 @@ func main() {
 	log.SetOutput(file)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
 
-	fmt.Print("Calling API...")
-	client := &http.Client{}
-	baseUrl := "http://127.0.0.1:8000"
-	url := baseUrl + "/customers"
+	start := time.Now()
 
 	ctx := context.Background()
 	bqClient, err := bigquery.NewClient(ctx, "ian-meikle-playground")
@@ -79,8 +78,12 @@ func main() {
 		log.Printf("Table creation: %v\n", err)
 	}
 
-	start := time.Now()
-	pageMax := 100
+	fmt.Print("Calling API...")
+	client := &http.Client{}
+	baseUrl := "http://127.0.0.1:8000"
+	url := baseUrl + "/customers"
+
+	pageMax := 100 // Number of pages to be retrieved
 
 	ch := make(chan struct{})
 	var tokens = make(chan struct{}, 10)
@@ -100,7 +103,7 @@ func main() {
 	}
 
 	elapsed := time.Since(start)
-	fmt.Printf("Program took %s", elapsed)
+	fmt.Printf("Program took %s\n", elapsed)
 }
 
 func readAPI(tUrl string, client *http.Client) []Customer {
